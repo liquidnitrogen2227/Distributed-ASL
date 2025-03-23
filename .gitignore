@@ -1,0 +1,11 @@
+bin
+include
+lib
+lib64
+share
+pyvenv.cfg
+__pycache__
+.ropeproject
+data/processed
+dataset
+logs
