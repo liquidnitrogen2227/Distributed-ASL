@@ -1,0 +1,8 @@
+fastapi
+uvicorn
+opencv-python
+numpy
+httpx
+tensorflow
+python-multipart
+# Add any other dependencies your app needs

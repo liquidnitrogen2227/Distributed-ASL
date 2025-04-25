@@ -9,6 +9,7 @@ import pickle
 import sys
 import logging
 
+model = load_model("C:/Users/chess/signeval/saved_models/model_20250323-111355/best_model.h5")
 # Add parent directory to path
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import config

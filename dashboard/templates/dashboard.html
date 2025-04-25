@@ -1,0 +1,455 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SignEval Dashboard</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        .chart-container {
+            position: relative;
+            height: 300px;
+            margin-bottom: 20px;
+        }
+        .metrics-card {
+            margin-bottom: 15px;
+        }
+        .node-status {
+            display: inline-block;
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+        }
+        .node-healthy {
+            background-color: #28a745;
+        }
+        .node-unhealthy {
+            background-color: #dc3545;
+        }
+    </style>
+</head>
+<body>
+    <nav class="navbar navbar-expand-lg navbar-dark bg-dark">
+        <div class="container-fluid">
+            <a class="navbar-brand" href="#">SignEval Dashboard</a>
+        </div>
+    </nav>
+
+    <div class="container-fluid mt-4">
+        <div class="row">
+            <div class="col-md-6">
+                <div class="card metrics-card">
+                    <div class="card-header d-flex justify-content-between">
+                        <h5>Load Balancer Status</h5>
+                        <div>
+                            <button class="btn btn-sm btn-primary" id="refreshButton">Refresh</button>
+                        </div>
+                    </div>
+                    <div class="card-body">
+                        <div class="row">
+                            <div class="col-6">
+                                <p><strong>Total Requests:</strong> <span id="totalRequests">0</span></p>
+                                <p><strong>Successful Requests:</strong> <span id="successfulRequests">0</span></p>
+                                <p><strong>Failed Requests:</strong> <span id="failedRequests">0</span></p>
+                            </div>
+                            <div class="col-6">
+                                <p><strong>Current Algorithm:</strong> <span id="currentAlgorithm">-</span></p>
+                                <div class="form-group">
+                                    <label for="algorithmSelect">Change Algorithm:</label>
+                                    <select class="form-control" id="algorithmSelect">
+                                        <option value="round_robin">Round Robin</option>
+                                        <option value="weighted_round_robin">Weighted Round Robin</option>
+                                        <option value="least_connections">Least Connections</option>
+                                        <option value="response_time">Best Response Time</option>
+                                    </select>
+                                    <button class="btn btn-sm btn-success mt-2" id="updateAlgorithmButton">Update</button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="card metrics-card">
+                    <div class="card-header">
+                        <h5>Request Distribution</h5>
+                    </div>
+                    <div class="card-body">
+                        <div class="chart-container">
+                            <canvas id="requestDistributionChart"></canvas>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="col-md-6">
+                <div class="card metrics-card">
+                    <div class="card-header">
+                        <h5>Node Status</h5>
+                    </div>
+                    <div class="card-body" id="nodeStatusContainer">
+                        <!-- Node status cards will be added here dynamically -->
+                    </div>
+                </div>
+
+                <div class="card metrics-card">
+                    <div class="card-header">
+                        <h5>Response Time</h5>
+                    </div>
+                    <div class="card-body">
+                        <div class="chart-container">
+                            <canvas id="responseTimeChart"></canvas>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="row">
+            <div class="col-12">
+                <div class="card metrics-card">
+                    <div class="card-header">
+                        <h5>Node CPU & Memory Usage</h5>
+                    </div>
+                    <div class="card-body">
+                        <div class="chart-container">
+                            <canvas id="resourceUsageChart"></canvas>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="row">
+            <div class="col-12">
+                <div class="card metrics-card">
+                    <div class="card-header d-flex justify-content-between">
+                        <h5>Historical Metrics</h5>
+                        <div>
+                            <select id="timeRangeSelect" class="form-select">
+                                <option value="1">Last Hour</option>
+                                <option value="6">Last 6 Hours</option>
+                                <option value="24">Last 24 Hours</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div class="card-body">
+                        <div class="chart-container">
+                            <canvas id="historicalRequestsChart"></canvas>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Charts
+        let requestDistributionChart = null;
+        let responseTimeChart = null;
+        let resourceUsageChart = null;
+        let historicalRequestsChart = null;
+
+        // Initialize charts
+        function initCharts() {
+            // Request Distribution Chart
+            const requestCtx = document.getElementById('requestDistributionChart').getContext('2d');
+            requestDistributionChart = new Chart(requestCtx, {
+                type: 'pie',
+                data: {
+                    labels: [],
+                    datasets: [{
+                        data: [],
+                        backgroundColor: [
+                            'rgba(255, 99, 132, 0.7)',
+                            'rgba(54, 162, 235, 0.7)',
+                            'rgba(255, 206, 86, 0.7)',
+                            'rgba(75, 192, 192, 0.7)',
+                            'rgba(153, 102, 255, 0.7)',
+                        ],
+                        borderColor: [
+                            'rgba(255, 99, 132, 1)',
+                            'rgba(54, 162, 235, 1)',
+                            'rgba(255, 206, 86, 1)',
+                            'rgba(75, 192, 192, 1)',
+                            'rgba(153, 102, 255, 1)',
+                        ],
+                        borderWidth: 1
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false
+                }
+            });
+
+            // Response Time Chart
+            const responseCtx = document.getElementById('responseTimeChart').getContext('2d');
+            responseTimeChart = new Chart(responseCtx, {
+                type: 'bar',
+                data: {
+                    labels: [],
+                    datasets: [{
+                        label: 'Average Response Time (ms)',
+                        data: [],
+                        backgroundColor: 'rgba(54, 162, 235, 0.5)',
+                        borderColor: 'rgba(54, 162, 235, 1)',
+                        borderWidth: 1
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    scales: {
+                        y: {
+                            beginAtZero: true
+                        }
+                    }
+                }
+            });
+
+            // Resource Usage Chart
+            const resourceCtx = document.getElementById('resourceUsageChart').getContext('2d');
+            resourceUsageChart = new Chart(resourceCtx, {
+                type: 'bar',
+                data: {
+                    labels: [],
+                    datasets: [
+                        {
+                            label: 'CPU Usage (%)',
+                            data: [],
+                            backgroundColor: 'rgba(255, 99, 132, 0.5)',
+                            borderColor: 'rgba(255, 99, 132, 1)',
+                            borderWidth: 1
+                        },
+                        {
+                            label: 'Memory Usage (%)',
+                            data: [],
+                            backgroundColor: 'rgba(75, 192, 192, 0.5)',
+                            borderColor: 'rgba(75, 192, 192, 1)',
+                            borderWidth: 1
+                        }
+                    ]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    scales: {
+                        y: {
+                            beginAtZero: true,
+                            max: 100
+                        }
+                    }
+                }
+            });
+
+            // Historical Requests Chart
+            const histCtx = document.getElementById('historicalRequestsChart').getContext('2d');
+            historicalRequestsChart = new Chart(histCtx, {
+                type: 'line',
+                data: {
+                    labels: [],
+                    datasets: [
+                        {
+                            label: 'Total Requests',
+                            data: [],
+                            backgroundColor: 'rgba(54, 162, 235, 0.1)',
+                            borderColor: 'rgba(54, 162, 235, 1)',
+                            borderWidth: 2,
+                            fill: true
+                        },
+                        {
+                            label: 'Successful Requests',
+                            data: [],
+                            backgroundColor: 'rgba(75, 192, 192, 0.1)',
+                            borderColor: 'rgba(75, 192, 192, 1)',
+                            borderWidth: 2,
+                            fill: true
+                        },
+                        {
+                            label: 'Failed Requests',
+                            data: [],
+                            backgroundColor: 'rgba(255, 99, 132, 0.1)',
+                            borderColor: 'rgba(255, 99, 132, 1)',
+                            borderWidth: 2,
+                            fill: true
+                        }
+                    ]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    scales: {
+                        y: {
+                            beginAtZero: true
+                        }
+                    }
+                }
+            });
+        }
+
+        // Update charts with current metrics
+        function updateCharts(metrics) {
+            // Update request distribution chart
+            const distribution = metrics.distribution || {};
+            const nodeIds = Object.keys(distribution);
+            const distributionValues = Object.values(distribution);
+            
+            requestDistributionChart.data.labels = nodeIds;
+            requestDistributionChart.data.datasets[0].data = distributionValues;
+            requestDistributionChart.update();
+
+            // Update node response time chart
+            const nodes = metrics.nodes || {};
+            const nodeNames = Object.keys(nodes);
+            const responseTimes = nodeNames.map(id => nodes[id].avg_response_time);
+            
+            responseTimeChart.data.labels = nodeNames;
+            responseTimeChart.data.datasets[0].data = responseTimes;
+            responseTimeChart.update();
+
+            // Update resource usage chart
+            const cpuUsage = nodeNames.map(id => nodes[id].cpu_load);
+            const memoryUsage = nodeNames.map(id => nodes[id].memory_load);
+            
+            resourceUsageChart.data.labels = nodeNames;
+            resourceUsageChart.data.datasets[0].data = cpuUsage;
+            resourceUsageChart.data.datasets[1].data = memoryUsage;
+            resourceUsageChart.update();
+
+            // Update node status cards
+            const nodeStatusContainer = document.getElementById('nodeStatusContainer');
+            nodeStatusContainer.innerHTML = '';
+            
+            nodeNames.forEach(nodeId => {
+                const node = nodes[nodeId];
+                const isHealthy = node.healthy;
+                
+                const nodeCard = document.createElement('div');
+                nodeCard.className = 'card mb-2';
+                nodeCard.innerHTML = `
+                    <div class="card-body p-2">
+                        <div class="d-flex justify-content-between align-items-center">
+                            <div>
+                                <span class="node-status ${isHealthy ? 'node-healthy' : 'node-unhealthy'}"></span>
+                                <strong>${nodeId}</strong>
+                            </div>
+                            <span class="badge ${isHealthy ? 'bg-success' : 'bg-danger'}">
+                                ${isHealthy ? 'Healthy' : 'Unhealthy'}
+                            </span>
+                        </div>
+                        <div class="mt-2">
+                            <small>CPU: ${node.cpu_load.toFixed(1)}% | Memory: ${node.memory_load.toFixed(1)}%</small><br>
+                            <small>Avg Response: ${node.avg_response_time.toFixed(2)}ms</small><br>
+                            <small>Requests: ${node.successful_requests} success, ${node.failed_requests} failed</small>
+                        </div>
+                    </div>
+                `;
+                nodeStatusContainer.appendChild(nodeCard);
+            });
+        }
+
+        // Update metrics display
+        function updateMetricsDisplay(metrics) {
+            document.getElementById('totalRequests').textContent = metrics.requests_total || 0;
+            document.getElementById('successfulRequests').textContent = metrics.requests_success || 0;
+            document.getElementById('failedRequests').textContent = metrics.requests_failed || 0;
+            document.getElementById('currentAlgorithm').textContent = metrics.algorithm || '-';
+            
+            // Set the select to match the current algorithm
+            const algoSelect = document.getElementById('algorithmSelect');
+            if (metrics.algorithm) {
+                algoSelect.value = metrics.algorithm;
+            }
+        }
+
+        // Fetch and update historical metrics
+        function updateHistoricalMetrics() {
+            const hours = document.getElementById('timeRangeSelect').value;
+            
+            fetch(`/api/historical-metrics?hours=${hours}`)
+                .then(response => response.json())
+                .then(data => {
+                    if (data.error) {
+                        console.error('Error fetching historical metrics:', data.error);
+                        return;
+                    }
+                    
+                    const requestMetrics = data.request_metrics;
+                    
+                    // Format timestamps
+                    const labels = requestMetrics.timestamps.map(ts => {
+                        const date = new Date(ts * 1000);
+                        return date.toLocaleTimeString();
+                    });
+                    
+                    // Update historical chart
+                    historicalRequestsChart.data.labels = labels;
+                    historicalRequestsChart.data.datasets[0].data = requestMetrics.total_requests;
+                    historicalRequestsChart.data.datasets[1].data = requestMetrics.successful_requests;
+                    historicalRequestsChart.data.datasets[2].data = requestMetrics.failed_requests;
+                    historicalRequestsChart.update();
+                })
+                .catch(error => console.error('Error fetching historical data:', error));
+        }
+
+        // Fetch current metrics
+        function fetchMetrics() {
+            fetch('/api/current-metrics')
+                .then(response => response.json())
+                .then(data => {
+                    if (data.error) {
+                        console.error('Error fetching metrics:', data.error);
+                        return;
+                    }
+                    
+                    updateMetricsDisplay(data);
+                    updateCharts(data);
+                })
+                .catch(error => console.error('Error:', error));
+        }
+
+        // Update algorithm
+        function updateAlgorithm() {
+            const algorithm = document.getElementById('algorithmSelect').value;
+            
+            fetch(`/api/algorithm/${algorithm}`, {
+                method: 'POST'
+            })
+                .then(response => response.json())
+                .then(data => {
+                    if (data.error) {
+                        console.error('Error updating algorithm:', data.error);
+                        return;
+                    }
+                    
+                    document.getElementById('currentAlgorithm').textContent = data.algorithm;
+                    fetchMetrics();
+                })
+                .catch(error => console.error('Error:', error));
+        }
+
+        // Initialize
+        document.addEventListener('DOMContentLoaded', function() {
+            initCharts();
+            fetchMetrics();
+            updateHistoricalMetrics();
+            
+            // Setup refresh button
+            document.getElementById('refreshButton').addEventListener('click', fetchMetrics);
+            
+            // Setup algorithm update button
+            document.getElementById('updateAlgorithmButton').addEventListener('click', updateAlgorithm);
+            
+            // Setup time range selector
+            document.getElementById('timeRangeSelect').addEventListener('change', updateHistoricalMetrics);
+            
+            // Auto-refresh metrics every 10 seconds
+            setInterval(fetchMetrics, 10000);
+            
+            // Auto-refresh historical metrics every 30 seconds
+            setInterval(updateHistoricalMetrics, 30000);
+        });
+    </script>
+</body>
+</html>

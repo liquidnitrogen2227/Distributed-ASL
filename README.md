@@ -1,119 +1,49 @@
-# SignEval - ASL Alphabet Recognition
+# Running the Project with Docker
 
-SignEval is a real-time American Sign Language (ASL) alphabet recognition system that uses hand landmarks to identify sign language gestures through a webcam.
+To simplify the setup and execution of the SignEval project, Docker and Docker Compose can be utilized. Follow the steps below to build and run the project using Docker:
 
-## Features
+## Prerequisites
 
-- Real-time ASL alphabet sign detection
-- Uses MediaPipe for hand landmark detection
-- Deep learning model for accurate sign classification
-- Interactive webcam interface with feedback
-- Support for all 26 ASL alphabet letters plus "space", "delete", and "nothing" gestures
+- Ensure Docker and Docker Compose are installed on your system.
+- Verify that the required ports (5000) are available.
 
-## Project Structure
+## Steps to Build and Run
 
-```
-signeval/
-├── data/
-│   └── preprocessing.py    # Data preprocessing utilities
-├── models/
-│   ├── train.py            # Model training script
-│   └── evaluate.py         # Model evaluation utilities
-├── utils/
-│   └── landmark_utils.py   # Hand landmark extraction utilities
-├── app.py                  # Main application script
-├── config.py               # Configuration parameters
-├── requirements.txt        # Required Python packages
-└── README.md               # Project documentation
-```
+1. **Build the Docker Images**
 
-## Setup
+   Navigate to the project directory and execute the following command to build the Docker images:
 
-1. Clone the repository:
-```bash
-git clone https://github.com/yourusername/signeval.git
-cd signeval
-```
+   ```bash
+   docker-compose build
+   ```
 
-2. Create a virtual environment and install dependencies:
-```bash
-python -m venv venv
-source venv/bin/activate  # On Windows, use: venv\Scripts\activate
-pip install -r requirements.txt
-```
+2. **Run the Services**
 
-3. Prepare your dataset:
-   - Ensure the ASL alphabet dataset is placed in `dataset/asl_alphabet_train` and `dataset/asl_alphabet_test`
-   - The dataset should contain 29 folders (A-Z, del, nothing, space)
+   Start the services defined in the `docker-compose.yml` file:
 
-## Usage
+   ```bash
+   docker-compose up
+   ```
 
-### 1. Preprocess the data
+   This will:
+   - Launch the `signeval` service, exposing it on port `5000`.
+   - Start a PostgreSQL database service for backend support.
 
-```bash
-python data/preprocessing.py
-```
+3. **Access the Application**
 
-This will:
-- Extract hand landmarks from images
-- Normalize the landmarks
-- Split the data into training and validation sets
-- Save the processed data to `data/processed/`
+   Open your web browser and navigate to `http://localhost:5000` to access the SignEval application.
 
-### 2. Train the model
+## Configuration
 
-```bash
-python models/train.py
-```
+- The `signeval` service depends on the `database` service, which is configured with the following environment variables:
+  - `POSTGRES_USER`: `user`
+  - `POSTGRES_PASSWORD`: `password`
 
-This will:
-- Load the preprocessed data
-- Train a deep learning model
-- Save the trained model to `saved_models/`
-- Generate training history plots
+- Modify these variables in the `docker-compose.yml` file if needed.
 
-### 3. Evaluate the model
+## Notes
 
-```bash
-python models/evaluate.py
-```
+- The application code is located in the `/app` directory within the container.
+- Logs and database data are stored in the respective volumes defined in the `docker-compose.yml` file.
 
-This will:
-- Load the latest trained model
-- Evaluate its performance on the validation set
-- Generate a confusion matrix and classification report
-- Analyze common misclassifications
-
-### 4. Run the application
-
-```bash
-python app.py
-```
-
-This will:
-- Load the trained model
-- Open your webcam
-- Start real-time ASL sign recognition
-
-## Customization
-
-You can modify the configuration parameters in `config.py` to adjust:
-- Dataset paths
-- Model architecture
-- Training parameters
-- Real-time prediction settings
-
-## Model Details
-
-- **Input**: 63-dimensional vector (21 hand landmarks with x, y, z coordinates)
-- **Architecture**: Dense neural network with batch normalization and dropout
-- **Output**: 29 classes (A-Z, del, nothing, space)
-
-## License
-
-[License Information]
-
-## Acknowledgments
-
-- The ASL alphabet dataset
-- MediaPipe for hand landmark detection
+By using Docker, you can ensure a consistent and isolated environment for running the SignEval project.

@@ -9,6 +9,7 @@ import sys
 import argparse
 import logging
 from typing import Tuple, Dict, Optional
+import psutil
 
 from utils.landmark_utils import HandLandmarkExtractor, normalize_landmarks, PredictionSmoother
 import config
@@ -154,7 +155,7 @@ class SignEvalApp:
 
     def run(self, camera_index: int = 0, window_name: str = "SignEval - ASL Recognition"):
         """
-        Run the application with webcam input.
+        Run the application with webcam input and display performance metrics.
 
         Args:
             camera_index: Index of the camera to use
@@ -184,8 +185,14 @@ class SignEvalApp:
                     logger.error("Failed to read frame from camera")
                     break
 
+                # Start timer for latency measurement
+                start_time = time.time()
+
                 # Process frame (unflipped for prediction accuracy)
                 annotated_frame, prediction, confidence = self.process_frame(frame)
+
+                # Measure latency
+                latency = time.time() - start_time
 
                 # Flip for display (same behavior as original app)
                 mirrored_frame = cv2.flip(annotated_frame, 1)
@@ -197,32 +204,46 @@ class SignEvalApp:
                     fps_counter = 0
                     fps_start_time = time.time()
 
+                # Measure resource utilization
+                cpu_usage = psutil.cpu_percent()
+                memory_usage = psutil.virtual_memory().percent
+
                 # Create a separate info layer for text (which won't be flipped)
                 h, w = mirrored_frame.shape[:2]
                 info_layer = np.zeros((h, w, 3), dtype=np.uint8)
 
                 # Add FPS
                 cv2.putText(info_layer, f"FPS: {fps}", (10, 30),
-                           cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
+                            cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
+
+                # Add latency
+                cv2.putText(info_layer, f"Latency: {latency:.2f}s", (10, 60),
+                            cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
+
+                # Add CPU and memory usage
+                cv2.putText(info_layer, f"CPU: {cpu_usage}%", (10, 90),
+                            cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
+                cv2.putText(info_layer, f"Memory: {memory_usage}%", (10, 120),
+                            cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
 
                 # Add hand detection status
                 hand_status = "Hand Detected" if prediction is not None else "No Hand Detected"
-                cv2.putText(info_layer, hand_status, (10, 60),
-                           cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
+                cv2.putText(info_layer, hand_status, (10, 150),
+                            cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
 
                 # Add prediction
                 if prediction is not None:
                     # Draw prediction with high confidence in green
                     cv2.putText(info_layer, f"Sign: {prediction} ({confidence:.2f})",
-                               (10, 90), cv2.FONT_HERSHEY_SIMPLEX, 0.9, (0, 255, 0), 2)
+                                (10, 180), cv2.FONT_HERSHEY_SIMPLEX, 0.9, (0, 255, 0), 2)
                 elif confidence is not None:
                     # Draw low confidence prediction in yellow
-                    cv2.putText(info_layer, f"Low confidence: {confidence:.2f})",
-                               (10, 90), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 255), 2)
+                    cv2.putText(info_layer, f"Low confidence: {confidence:.2f}",
+                                (10, 180), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 255), 2)
 
                 # Add instructions
                 cv2.putText(info_layer, "Press 'q' to quit", (10, h - 10),
-                           cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2)
+                            cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2)
 
                 # Overlay info layer onto mirrored frame
                 # Only add text where it exists (where info_layer > 0)

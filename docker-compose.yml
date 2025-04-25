@@ -1,0 +1,106 @@
+version: '3'
+
+services:
+  frontend:
+    build:
+      context: .
+      dockerfile: docker/frontend.Dockerfile
+    ports:
+      - "5000:5000"
+    environment:
+      - LOAD_BALANCER_URL=http://load_balancer:5000
+      - DISPLAY=${DISPLAY}  # For GUI if needed
+      - USE_DUMMY_CAMERA=false
+    depends_on:
+      - load_balancer
+    volumes:
+      - ./frontend:/app/frontend
+
+  load_balancer:
+    build:
+      context: .
+      dockerfile: docker/load_balancer.Dockerfile
+    ports:
+      - "5001:5000"
+    environment:
+      - RECOGNITION_NODES=node1:recognition1:5001,node2:recognition2:5001,node3:recognition3:5001
+      - LOAD_BALANCING_ALGORITHM=weighted_round_robin
+    depends_on:
+      - recognition1
+      - recognition2
+      - recognition3
+
+  recognition1:
+    build:
+      context: .
+      dockerfile: docker/recognition.Dockerfile
+    container_name: recognition1
+    ports:
+      - "5011:5001"
+    environment:
+      - NODE_ID=node1
+      - PORT=5001
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 1G
+
+  recognition2:
+    build:
+      context: .
+      dockerfile: docker/recognition.Dockerfile
+    container_name: recognition2
+    ports:
+      - "5012:5001"
+    environment:
+      - NODE_ID=node2
+      - PORT=5001
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 1G
+
+  recognition3:
+    build:
+      context: .
+      dockerfile: docker/recognition.Dockerfile
+    container_name: recognition3
+    ports:
+      - "5013:5001"
+    environment:
+      - NODE_ID=node3
+      - PORT=5001
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 1G
+
+  dashboard:
+    build:
+      context: .
+      dockerfile: docker/dashboard.Dockerfile
+    ports:
+      - "5002:5002"
+    environment:
+      - LOAD_BALANCER_URL=http://load_balancer:5000
+      - METRICS_INTERVAL=5
+    volumes:
+      - metrics_data:/data
+    depends_on:
+      - load_balancer
+
+  database:
+    image: postgres:14
+    environment:
+      - POSTGRES_USER=user
+      - POSTGRES_PASSWORD=password
+      - POSTGRES_DB=signeval
+    volumes:
+      - db_data:/var/lib/postgresql/data
+
+volumes:
+  metrics_data:
+  db_data:
