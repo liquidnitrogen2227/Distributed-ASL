@@ -24,7 +24,7 @@ services:
       - "5001:5000"
     environment:
       - RECOGNITION_NODES=node1:recognition1:5001,node2:recognition2:5001,node3:recognition3:5001
-      - LOAD_BALANCING_ALGORITHM=weighted_round_robin
+      - LOAD_BALANCING_ALGORITHM=score  # Set scoring as default algorithm
     depends_on:
       - recognition1
       - recognition2

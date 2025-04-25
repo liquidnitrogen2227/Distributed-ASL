@@ -6,6 +6,7 @@ import threading
 import json
 import os
 import base64
+import math
 from typing import Dict, List, Optional, Tuple
 
 app = Flask(__name__)
@@ -48,12 +49,64 @@ class RecognitionNode:
         """Calculate a load score (lower is better)."""
         # Customize this formula based on your specific requirements
         return 0.7 * self.cpu_load + 0.3 * self.memory_load
+    
+    def get_performance_score(self):
+        """
+        Calculate a comprehensive performance score for this node.
+        Lower score is better (node with lowest score gets selected).
+        """
+        # Start with base score
+        score = 0.0
+        
+        # Apply weights to different metrics
+        weights = {
+            'cpu_load': 2.0,        # CPU utilization has high impact
+            'memory_load': 1.5,     # Memory usage has medium-high impact
+            'response_time': 2.0,    # Response time has high impact
+            'queue_length': 3.0,     # Queue length has highest impact
+            'error_rate': 4.0        # Error rate has very high impact
+        }
+        
+        # Add weighted CPU score (0-100%)
+        score += self.cpu_load * weights['cpu_load']
+        
+        # Add weighted memory score (0-100%)
+        score += self.memory_load * weights['memory_load']
+        
+        # Add weighted response time
+        # Normalize response time: assume anything under 50ms is great, over 1000ms is terrible
+        avg_time = self.avg_response_time()
+        if avg_time != float('inf'):  # Handle nodes with no response time history
+            normalized_time = min(100, (avg_time / 10))  # Convert ms to 0-100 scale
+            score += normalized_time * weights['response_time']
+        else:
+            # Penalize nodes with no history, but not too severely
+            score += 50 * weights['response_time']
+        
+        # Add weighted queue length
+        if hasattr(self, 'queue_length'):
+            # Normalize queue: 0 is perfect, 10+ is bad
+            normalized_queue = min(100, self.queue_length * 10)
+            score += normalized_queue * weights['queue_length']
+        
+        # Add weighted error rate
+        if hasattr(self, 'error_rate'):
+            score += self.error_rate * weights['error_rate']
+        
+        # Apply a small bonus for nodes that have handled more requests successfully
+        # This slightly prefers experienced nodes over newly added ones
+        if hasattr(self, 'successful_requests') and self.successful_requests > 0:
+            # Small negative adjustment (reduces score)
+            experience_bonus = min(20, math.log2(self.successful_requests))
+            score -= experience_bonus
+        
+        return score
 
 class LoadBalancer:
     """Custom load balancer for recognition services."""
     
     def __init__(self):
-        self.nodes: Dict[str, RecognitionNode] = {}
+        self.nodes = {}
         self.algorithm = ALGORITHM
         self.current_index = 0
         self.metrics = {
@@ -76,11 +129,11 @@ class LoadBalancer:
             del self.nodes[node_id]
             logger.info(f"Removed node {node_id}")
     
-    def get_healthy_nodes(self) -> List[RecognitionNode]:
+    def get_healthy_nodes(self):
         """Get all currently healthy nodes."""
         return [node for node in self.nodes.values() if node.healthy]
     
-    def select_node(self) -> Optional[RecognitionNode]:
+    def select_node(self):
         """Select a node based on the configured algorithm."""
         healthy_nodes = self.get_healthy_nodes()
         if not healthy_nodes:
@@ -94,16 +147,18 @@ class LoadBalancer:
             return self._least_connections(healthy_nodes)
         elif self.algorithm == 'response_time':
             return self._best_response_time(healthy_nodes)
+        elif self.algorithm == 'score':  # Add this new algorithm option
+            return self._best_score(healthy_nodes)
         else:
-            # Default to round robin
-            return self._round_robin(healthy_nodes)
+            # Default to weighted round robin
+            return self._weighted_round_robin(healthy_nodes)
     
-    def _round_robin(self, nodes: List[RecognitionNode]) -> RecognitionNode:
+    def _round_robin(self, nodes):
         """Simple round-robin selection."""
         self.current_index = (self.current_index + 1) % len(nodes)
         return nodes[self.current_index]
     
-    def _weighted_round_robin(self, nodes: List[RecognitionNode]) -> RecognitionNode:
+    def _weighted_round_robin(self, nodes):
         """Weight nodes by their inverse load."""
         # Calculate weights (higher weight = lower load)
         weights = [(100 - node.get_load_score()) for node in nodes]
@@ -129,14 +184,20 @@ class LoadBalancer:
                 
         return nodes[self.current_index]
     
-    def _least_connections(self, nodes: List[RecognitionNode]) -> RecognitionNode:
+    def _least_connections(self, nodes):
         """Select the node with the least current usage."""
         return min(nodes, key=lambda node: node.last_used)
     
-    def _best_response_time(self, nodes: List[RecognitionNode]) -> RecognitionNode:
+    def _best_response_time(self, nodes):
         """Select node with best response time."""
         return min(nodes, key=lambda node: node.avg_response_time())
     
+    def _best_score(self, nodes):
+        """Select the node with the best (lowest) performance score."""
+        if not nodes:
+            return None
+        return min(nodes, key=lambda node: node.get_performance_score())
+
     def update_metrics_for_request(self, node_id: str, success: bool):
         """Update metrics after a request."""
         self.metrics['requests_total'] += 1
@@ -254,13 +315,17 @@ def get_metrics():
     # Add node-specific metrics
     metrics['nodes'] = {}
     for node_id, node in balancer.nodes.items():
+        # Calculate performance score for display
+        performance_score = node.get_performance_score()
+        
         metrics['nodes'][node_id] = {
             'healthy': node.healthy,
             'cpu_load': node.cpu_load,
             'memory_load': node.memory_load,
             'avg_response_time': node.avg_response_time(),
-            'successful_requests': node.successful_requests,
-            'failed_requests': node.failed_requests,
+            'successful_requests': getattr(node, 'successful_requests', 0),
+            'failed_requests': getattr(node, 'failed_requests', 0),
+            'performance_score': performance_score,
             'url': node.url
         }
     
@@ -269,7 +334,7 @@ def get_metrics():
 @app.route('/algorithm/<algorithm>', methods=['POST'])
 def change_algorithm(algorithm):
     """Change the load balancing algorithm."""
-    valid_algorithms = ['round_robin', 'weighted_round_robin', 'least_connections', 'response_time']
+    valid_algorithms = ['round_robin', 'weighted_round_robin', 'least_connections', 'response_time', 'score']
     
     if algorithm not in valid_algorithms:
         return jsonify({'error': f'Invalid algorithm. Choose from: {valid_algorithms}'}), 400

@@ -62,6 +62,7 @@
                                         <option value="weighted_round_robin">Weighted Round Robin</option>
                                         <option value="least_connections">Least Connections</option>
                                         <option value="response_time">Best Response Time</option>
+                                        <option value="score">Performance Score</option>
                                     </select>
                                     <button class="btn btn-sm btn-success mt-2" id="updateAlgorithmButton">Update</button>
                                 </div>
@@ -341,7 +342,8 @@
                         <div class="mt-2">
                             <small>CPU: ${node.cpu_load.toFixed(1)}% | Memory: ${node.memory_load.toFixed(1)}%</small><br>
                             <small>Avg Response: ${node.avg_response_time.toFixed(2)}ms</small><br>
-                            <small>Requests: ${node.successful_requests} success, ${node.failed_requests} failed</small>
+                            <small>Requests: ${node.successful_requests} success, ${node.failed_requests} failed</small><br>
+                            <small>Performance Score: ${node.performance_score ? node.performance_score.toFixed(1) : 'N/A'}</small>
                         </div>
                     </div>
                 `;

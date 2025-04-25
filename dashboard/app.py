@@ -1,4 +1,4 @@
-from flask import Flask, render_template, jsonify, request  # Added request import
+from flask import Flask, render_template, jsonify, request
 import requests
 import time
 import threading
@@ -40,6 +40,7 @@ def setup_database():
         memory_load REAL,
         response_time REAL,
         healthy INTEGER,
+        performance_score REAL,
         PRIMARY KEY (timestamp, node_id)
     )
     ''')
@@ -52,6 +53,20 @@ def setup_database():
         successful_requests INTEGER,
         failed_requests INTEGER,
         algorithm TEXT
+    )
+    ''')
+    
+    # Create auto-scaling metrics table
+    cursor.execute('''
+    CREATE TABLE IF NOT EXISTS auto_scaling_metrics (
+        timestamp REAL PRIMARY KEY,
+        enabled INTEGER,
+        min_nodes INTEGER,
+        max_nodes INTEGER,
+        threshold_high REAL,
+        threshold_low REAL,
+        cooldown INTEGER,
+        last_action_time REAL
     )
     ''')
     
@@ -83,14 +98,15 @@ def metrics_collector():
                 # Store node metrics
                 for node_id, node_data in metrics.get('nodes', {}).items():
                     cursor.execute(
-                        "INSERT OR REPLACE INTO node_metrics VALUES (?, ?, ?, ?, ?, ?)",
+                        "INSERT OR REPLACE INTO node_metrics VALUES (?, ?, ?, ?, ?, ?, ?)",
                         (
                             timestamp,
                             node_id,
                             node_data.get('cpu_load', 0),
                             node_data.get('memory_load', 0),
                             node_data.get('avg_response_time', 0),
-                            1 if node_data.get('healthy', False) else 0
+                            1 if node_data.get('healthy', False) else 0,
+                            node_data.get('performance_score', 0)
                         )
                     )
                 
@@ -105,6 +121,23 @@ def metrics_collector():
                         metrics.get('algorithm', 'unknown')
                     )
                 )
+                
+                # Store auto-scaling metrics if available
+                auto_scaling = metrics.get('auto_scaling', {})
+                if auto_scaling:
+                    cursor.execute(
+                        "INSERT OR REPLACE INTO auto_scaling_metrics VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                        (
+                            timestamp,
+                            1 if auto_scaling.get('enabled', False) else 0,
+                            auto_scaling.get('min_nodes', 1),
+                            auto_scaling.get('max_nodes', 5),
+                            auto_scaling.get('threshold_high', 75),
+                            auto_scaling.get('threshold_low', 30),
+                            auto_scaling.get('cooldown', 60),
+                            auto_scaling.get('last_scaling_action', 0)
+                        )
+                    )
                 
                 conn.commit()
                 conn.close()
@@ -152,7 +185,8 @@ def historical_metrics():
                 cpu_load,
                 memory_load,
                 response_time,
-                healthy
+                healthy,
+                performance_score
             FROM node_metrics
             WHERE timestamp >= ?
             ORDER BY timestamp
@@ -169,7 +203,8 @@ def historical_metrics():
                     'cpu_load': [],
                     'memory_load': [],
                     'response_time': [],
-                    'healthy': []
+                    'healthy': [],
+                    'performance_score': []
                 }
                 
             node_metrics[node_id]['timestamps'].append(row['timestamp'])
@@ -177,6 +212,7 @@ def historical_metrics():
             node_metrics[node_id]['memory_load'].append(row['memory_load'])
             node_metrics[node_id]['response_time'].append(row['response_time'])
             node_metrics[node_id]['healthy'].append(bool(row['healthy']))
+            node_metrics[node_id]['performance_score'].append(row['performance_score'])
             
         # Get request metrics
         cursor.execute(
@@ -208,12 +244,47 @@ def historical_metrics():
             request_metrics['successful_requests'].append(row['successful_requests'])
             request_metrics['failed_requests'].append(row['failed_requests'])
             request_metrics['algorithms'].append(row['algorithm'])
+        
+        # Get auto-scaling metrics
+        cursor.execute(
+            '''
+            SELECT 
+                timestamp,
+                enabled,
+                min_nodes,
+                max_nodes,
+                threshold_high,
+                threshold_low
+            FROM auto_scaling_metrics
+            WHERE timestamp >= ?
+            ORDER BY timestamp
+            ''',
+            (since,)
+        )
+        
+        auto_scaling_metrics = {
+            'timestamps': [],
+            'enabled': [],
+            'min_nodes': [],
+            'max_nodes': [],
+            'threshold_high': [],
+            'threshold_low': []
+        }
+        
+        for row in cursor.fetchall():
+            auto_scaling_metrics['timestamps'].append(row['timestamp'])
+            auto_scaling_metrics['enabled'].append(bool(row['enabled']))
+            auto_scaling_metrics['min_nodes'].append(row['min_nodes'])
+            auto_scaling_metrics['max_nodes'].append(row['max_nodes'])
+            auto_scaling_metrics['threshold_high'].append(row['threshold_high'])
+            auto_scaling_metrics['threshold_low'].append(row['threshold_low'])
             
         conn.close()
         
         return jsonify({
             'node_metrics': node_metrics,
-            'request_metrics': request_metrics
+            'request_metrics': request_metrics,
+            'auto_scaling_metrics': auto_scaling_metrics
         })
         
     except Exception as e:
@@ -229,6 +300,30 @@ def set_algorithm(algorithm):
             return jsonify(response.json())
         else:
             return jsonify({'error': f"Failed to set algorithm: {response.status_code}"}), 500
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/auto-scaling/<status>', methods=['POST'])
+def set_auto_scaling(status):
+    """Enable or disable auto-scaling."""
+    try:
+        response = requests.post(f"{LOAD_BALANCER_URL}/auto-scaling/{status}")
+        if response.status_code == 200:
+            return jsonify(response.json())
+        else:
+            return jsonify({'error': f"Failed to set auto-scaling: {response.status_code}"}), 500
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/auto-scaling/config', methods=['POST'])
+def configure_auto_scaling():
+    """Configure auto-scaling parameters."""
+    try:
+        response = requests.post(f"{LOAD_BALANCER_URL}/auto-scaling/config", json=request.json)
+        if response.status_code == 200:
+            return jsonify(response.json())
+        else:
+            return jsonify({'error': f"Failed to configure auto-scaling: {response.status_code}"}), 500
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
