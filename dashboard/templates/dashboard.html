@@ -27,6 +27,14 @@
         .node-unhealthy {
             background-color: #dc3545;
         }
+        #algorithmPerformanceChart {
+            max-height: 250px;
+        }
+
+        .metrics-card .table td {
+            padding: 0.5rem;
+            vertical-align: middle;
+        }
     </style>
 </head>
 <body>
@@ -142,6 +150,46 @@
                 </div>
             </div>
         </div>
+
+        <!-- Add this new section after your existing cards -->
+        <div class="row mt-4">
+            <div class="col-12">
+                <div class="card metrics-card">
+                    <div class="card-header d-flex justify-content-between align-items-center">
+                        <h5>Algorithm Performance Score</h5>
+                        <div>
+                            <span class="text-muted mr-2">Current Algorithm: <span id="currentAlgorithm" class="font-weight-bold">-</span></span>
+                            <button id="refreshPerformanceBtn" class="btn btn-sm btn-outline-primary ml-2">Refresh</button>
+                        </div>
+                    </div>
+                    <div class="card-body">
+                        <div class="row">
+                            <div class="col-lg-8">
+                                <canvas id="algorithmPerformanceChart" height="250"></canvas>
+                            </div>
+                            <div class="col-lg-4">
+                                <div class="table-responsive">
+                                    <table class="table table-sm">
+                                        <thead>
+                                            <tr>
+                                                <th>Metric</th>
+                                                <th>Value</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody id="performanceMetricsTable">
+                                            <tr><td>Avg Response Time</td><td id="avgResponseTime">-</td></tr>
+                                            <tr><td>Success Rate</td><td id="successRate">-</td></tr>
+                                            <tr><td>Throughput</td><td id="throughput">-</td></tr>
+                                            <tr><td>Performance Score</td><td id="performanceScore" class="font-weight-bold">-</td></tr>
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
     </div>
 
     <script>
@@ -150,6 +198,10 @@
         let responseTimeChart = null;
         let resourceUsageChart = null;
         let historicalRequestsChart = null;
+
+        // Performance score chart
+        let performanceChart;
+        let lastMetricsTimestamp = 0;
 
         // Initialize charts
         function initCharts() {
@@ -289,6 +341,145 @@
             });
         }
 
+        // Initialize the performance chart
+        function initPerformanceChart() {
+            const ctx = document.getElementById('algorithmPerformanceChart').getContext('2d');
+            
+            performanceChart = new Chart(ctx, {
+                type: 'bar',
+                data: {
+                    labels: ['Response Time', 'Success Rate', 'Throughput', 'Performance Score'],
+                    datasets: [{
+                        label: 'Performance Metrics',
+                        data: [0, 0, 0, 0],
+                        backgroundColor: [
+                            'rgba(255, 99, 132, 0.7)',   // Red for response time
+                            'rgba(75, 192, 192, 0.7)',   // Green for success rate
+                            'rgba(54, 162, 235, 0.7)',   // Blue for throughput
+                            'rgba(255, 206, 86, 0.7)'    // Yellow for performance score
+                        ],
+                        borderColor: [
+                            'rgba(255, 99, 132, 1)',
+                            'rgba(75, 192, 192, 1)',
+                            'rgba(54, 162, 235, 1)',
+                            'rgba(255, 206, 86, 1)'
+                        ],
+                        borderWidth: 1
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    scales: {
+                        y: {
+                            beginAtZero: true,
+                            max: 1,
+                            title: {
+                                display: true,
+                                text: 'Normalized Score (higher is better)'
+                            }
+                        }
+                    },
+                    plugins: {
+                        title: {
+                            display: true,
+                            text: 'Current Algorithm Performance'
+                        },
+                        tooltip: {
+                            callbacks: {
+                                label: function(context) {
+                                    const labels = ['Response Time (normalized)', 'Success Rate', 'Throughput (normalized)', 'Overall Performance'];
+                                    return labels[context.dataIndex] + ': ' + context.raw.toFixed(3);
+                                }
+                            }
+                        }
+                    }
+                }
+            });
+        }
+
+        // Calculate performance metrics from current data
+        function calculatePerformanceMetrics(metrics) {
+            if (!metrics || !metrics.nodes) {
+                return null;
+            }
+            
+            // Get node metrics
+            const nodes = Object.values(metrics.nodes);
+            if (nodes.length === 0) {
+                return null;
+            }
+            
+            // Calculate response time (average across nodes)
+            const nodeTimes = nodes.map(node => node.avg_response_time).filter(time => typeof time === 'number' && !isNaN(time));
+            const avgResponseTime = nodeTimes.length > 0 ? 
+                nodeTimes.reduce((sum, time) => sum + time, 0) / nodeTimes.length : 0;
+            
+            // Calculate success rate
+            const totalRequests = metrics.requests_total || 0;
+            const successfulRequests = metrics.requests_success || 0;
+            const successRate = totalRequests > 0 ? successfulRequests / totalRequests : 1;
+            
+            // Estimate throughput (requests per second)
+            // This is an approximation based on the difference in requests since last check
+            const currentTime = new Date().getTime() / 1000;
+            const timeDiff = currentTime - lastMetricsTimestamp;
+            const requestDiff = totalRequests - (window.lastTotalRequests || 0);
+            
+            // Store current values for next calculation
+            window.lastTotalRequests = totalRequests;
+            lastMetricsTimestamp = currentTime;
+            
+            const throughput = timeDiff > 0 ? requestDiff / timeDiff : 0;
+            
+            // Normalize values (0-1 scale where higher is better)
+            // Response time: assume 50ms is perfect (1.0), 500ms is poor (0.1)
+            const normalizedResponseTime = Math.max(0.1, Math.min(1.0, 1.5 - (avgResponseTime / 500)));
+            
+            // Throughput: normalize based on reasonable max value
+            // Adjust the divisor (30 here) based on your system's capabilities
+            const normalizedThroughput = Math.min(1.0, throughput / 30);
+            
+            // Calculate performance score (weighted average)
+            const performanceScore = (normalizedResponseTime * 0.4) + (successRate * 0.5) + (normalizedThroughput * 0.1);
+            
+            return {
+                avgResponseTime,
+                successRate,
+                throughput,
+                normalizedResponseTime,
+                normalizedThroughput,
+                performanceScore
+            };
+        }
+
+        // Update the performance metrics display
+        function updatePerformanceDisplay(metrics) {
+            const perfMetrics = calculatePerformanceMetrics(metrics);
+            
+            if (!perfMetrics) {
+                return;
+            }
+            
+            // Update the chart
+            performanceChart.data.datasets[0].data = [
+                perfMetrics.normalizedResponseTime,
+                perfMetrics.successRate,
+                perfMetrics.normalizedThroughput,
+                perfMetrics.performanceScore
+            ];
+            performanceChart.update();
+            
+            // Update the text metrics
+            document.getElementById('avgResponseTime').textContent = `${(perfMetrics.avgResponseTime).toFixed(2)} ms`;
+            document.getElementById('successRate').textContent = `${(perfMetrics.successRate * 100).toFixed(2)}%`;
+            document.getElementById('throughput').textContent = `${perfMetrics.throughput.toFixed(2)} req/s`;
+            document.getElementById('performanceScore').textContent = perfMetrics.performanceScore.toFixed(3);
+            
+            // Update current algorithm display
+            document.getElementById('currentAlgorithm').textContent = metrics.algorithm || 'Unknown';
+        }
+
         // Update charts with current metrics
         function updateCharts(metrics) {
             // Update request distribution chart
@@ -407,6 +598,7 @@
                     
                     updateMetricsDisplay(data);
                     updateCharts(data);
+                    updatePerformanceDisplay(data);
                 })
                 .catch(error => console.error('Error:', error));
         }
@@ -434,6 +626,7 @@
         // Initialize
         document.addEventListener('DOMContentLoaded', function() {
             initCharts();
+            initPerformanceChart();
             fetchMetrics();
             updateHistoricalMetrics();
             
