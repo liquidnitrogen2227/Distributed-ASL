@@ -1,7 +1,17 @@
 # Running the Project with Docker
-
+## Setup
 To simplify the setup and execution of the SignEval project, Docker and Docker Compose can be utilized. Follow the steps below to build and run the project using Docker:
-
+1. **Clone the Repository**
+   ```bash
+   git clone git clone https://github.com/yourusername/Distributed-ASL.git
+   cd Distributed-ASL
+   ```
+2. **Create Virtual Environments and install necessary requirements**
+   ```bash
+   python -m venv venv
+   source venv/bin/activate  # On Windows, use: venv\Scripts\activate
+   ```
+   
 ## Prerequisites
 
 - Ensure Docker and Docker Compose are installed on your system.
